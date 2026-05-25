@@ -1,5 +1,3 @@
-library flutter_mic_selector;
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -135,7 +133,12 @@ class MicSelector {
             onError: controller.addError,
             onDone: controller.close,
           );
-        }).catchError(controller.addError);
+        }).catchError((Object error, StackTrace stackTrace) {
+          if (!controller.isClosed) {
+            controller.addError(error, stackTrace);
+          }
+          return null;
+        });
       },
       onCancel: () => subscription?.cancel(),
     );
