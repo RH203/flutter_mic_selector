@@ -30,6 +30,16 @@ The plugin restores the saved device when the app opens, **but does not activate
 
 ---
 
+## Contributions Welcome
+
+Contributions are welcome, especially for adding support for platforms beyond Android.
+
+The current implementation focuses on Android microphone input routing. If you are interested in helping with iOS, web, macOS, Windows, or Linux support, feel free to open an issue or pull request with your proposed approach. Platform implementations should keep the public Dart API consistent and return `platformNotSupported` for APIs that cannot be implemented safely on that platform.
+
+Bug reports, documentation improvements, tests, and small API polish are also appreciated.
+
+---
+
 ## Android Setup
 
 The plugin declares `android.permission.RECORD_AUDIO` in its own manifest. Your app still needs to request the permission at runtime before starting a microphone session:
