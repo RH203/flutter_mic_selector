@@ -6,3 +6,6 @@
 * Improved `MicSelectorDropdown` so long device names truncate cleanly instead of overflowing.
 * Fixed restored-device handling when the saved microphone is no longer connected.
 * Hardened Android callback, permission, and recording cleanup paths to reduce leak risk.
+
+## 0.0.2
+* Update documented about `flutter_mic_selector`

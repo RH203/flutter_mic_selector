@@ -1,6 +1,6 @@
 name: flutter_mic_selector
 description: "Android microphone input device selection, persistence, permission helpers, and opt-in activation for Flutter apps."
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/RH203/flutter_mic_selector
 
 environment:
