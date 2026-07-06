@@ -1,0 +1,30 @@
+name: flutter_mic_selector
+description: Android microphone input device selection, persistence, permission helpers, and opt-in activation for Flutter apps.
+homepage: https://github.com/RH203/flutter_mic_selector
+
+output: doc/api/
+
+exclude:
+  - "*.g.dart"
+
+category_order:
+  - Core
+  - Models
+  - Widgets
+
+categories:
+  Core:
+    name: Core
+    description: Main entry point and platform interface.
+  Models:
+    name: Models
+    description: Data classes, enums, and error types.
+  Widgets:
+    name: Widgets
+    description: Built-in Flutter widgets for microphone selection UI.
+
+nodoc:
+  - "**/.*"
+
+showWarnings: true
+showErrors: true
