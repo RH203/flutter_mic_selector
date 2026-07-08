@@ -1,6 +1,5 @@
 package com.example.flutter_mic_selector
 
-import android.app.Activity
 import android.content.Context
 import android.media.AudioManager
 import android.os.Build
@@ -24,17 +23,13 @@ class FlutterMicSelectorPlugin :
   private lateinit var audioManager: AudioManager
   private lateinit var methodChannel: MethodChannel
   private lateinit var devicesChannel: EventChannel
-  private lateinit var levelsChannel: EventChannel
   private val mainHandler = Handler(Looper.getMainLooper())
 
-  private var activity: Activity? = null
   private var activityBinding: ActivityPluginBinding? = null
   private var devicesEventSink: EventChannel.EventSink? = null
-  private var levelEventSink: EventChannel.EventSink? = null
 
   // Specialised class collaborators
   private lateinit var storage: MicDeviceStorage
-  private lateinit var recorder: MicAudioRecorder
   private lateinit var permissionManager: MicPermissionManager
   private lateinit var deviceWatcher: MicDeviceWatcher
 
@@ -49,36 +44,22 @@ class FlutterMicSelectorPlugin :
     audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     storage = MicDeviceStorage(context)
-    recorder = MicAudioRecorder(onLevel = ::emitInputLevel)
     permissionManager = MicPermissionManager(context)
     deviceWatcher = MicDeviceWatcher(audioManager, mainHandler, onDevicesChanged = ::emitDevices)
 
     methodChannel = MethodChannel(binding.binaryMessenger, "flutter_mic_selector")
     devicesChannel = EventChannel(binding.binaryMessenger, "flutter_mic_selector/devices")
-    levelsChannel = EventChannel(binding.binaryMessenger, "flutter_mic_selector/levels")
 
     methodChannel.setMethodCallHandler(this)
     devicesChannel.setStreamHandler(this)
-    levelsChannel.setStreamHandler(object : EventChannel.StreamHandler {
-      override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
-        levelEventSink = events
-        emitInputLevel(0.0, 0.0)
-      }
-      override fun onCancel(arguments: Any?) {
-        levelEventSink = null
-      }
-    })
   }
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-    recorder.stop()
     deviceWatcher.stop()
     devicesEventSink = null
-    levelEventSink = null
     permissionManager.cancelPendingRequest("Plugin detached before permission completed.")
     methodChannel.setMethodCallHandler(null)
     devicesChannel.setStreamHandler(null)
-    levelsChannel.setStreamHandler(null)
   }
 
   // ---------------------------------------------------------------------------
@@ -87,19 +68,16 @@ class FlutterMicSelectorPlugin :
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
     activityBinding = binding
-    activity = binding.activity
     binding.addRequestPermissionsResultListener(permissionManager)
   }
 
   override fun onDetachedFromActivityForConfigChanges() {
     activityBinding?.removeRequestPermissionsResultListener(permissionManager)
     activityBinding = null
-    activity = null
   }
 
   override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
     activityBinding = binding
-    activity = binding.activity
     binding.addRequestPermissionsResultListener(permissionManager)
   }
 
@@ -107,7 +85,6 @@ class FlutterMicSelectorPlugin :
     activityBinding?.removeRequestPermissionsResultListener(permissionManager)
     permissionManager.cancelPendingRequest("Activity detached before permission completed.")
     activityBinding = null
-    activity = null
   }
 
   // ---------------------------------------------------------------------------
@@ -116,15 +93,13 @@ class FlutterMicSelectorPlugin :
 
   override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
     when (call.method) {
-      "getDevices"        -> result.success(inputDevices())
-      "getSelectedDeviceId" -> result.success(storage.read())
-      "selectDevice"      -> handleSelectDevice(call, result)
-      "clearSelectedDevice" -> handleClearSelectedDevice(result)
-      "start"             -> handleStart(call, result)
-      "stop"              -> { recorder.stop(); result.success(null) }
-      "hasPermission"     -> result.success(permissionManager.status())
-      "requestPermission" -> permissionManager.request(activity, result)
-      else                -> result.notImplemented()
+      "getDevices"             -> result.success(inputDevices())
+      "getSelectedDeviceId"    -> result.success(storage.read())
+      "selectDevice"           -> handleSelectDevice(call, result)
+      "clearSelectedDevice"    -> handleClearSelectedDevice(result)
+      "hasPermission"          -> result.success(permissionManager.status())
+      "requestPermission"      -> permissionManager.request(activityBinding?.activity, result)
+      else                     -> result.notImplemented()
     }
   }
 
@@ -157,17 +132,6 @@ class FlutterMicSelectorPlugin :
       result.error("deviceNotFound", "No input device exists for id $deviceId.", null)
       return
     }
-    if (recorder.isActive) {
-      val applied = recorder.applyPreferredDevice(deviceId, audioManager)
-      if (!applied) {
-        result.error(
-          "activationFailed",
-          "Android rejected microphone routing for device id $deviceId.",
-          null,
-        )
-        return
-      }
-    }
     selectedDeviceId = deviceId
     if (!storage.write(deviceId)) {
       result.error("unknown", "Unable to save selected microphone id.", null)
@@ -179,35 +143,7 @@ class FlutterMicSelectorPlugin :
   private fun handleClearSelectedDevice(result: MethodChannel.Result) {
     selectedDeviceId = null
     storage.clear()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      // Clearing preferred device on the active recorder is handled internally.
-    }
     result.success(null)
-  }
-
-  private fun handleStart(call: MethodCall, result: MethodChannel.Result) {
-    if (permissionManager.status() != "granted") {
-      result.error("permissionDenied", "RECORD_AUDIO permission is required.", null)
-      return
-    }
-    val requestedDeviceId = call.argument<String>("deviceId") ?: selectedDeviceId
-    when (val outcome = recorder.start(requestedDeviceId, audioManager)) {
-      is MicAudioRecorder.StartResult.Success -> {
-        selectedDeviceId = requestedDeviceId
-        requestedDeviceId?.let { storage.write(it) }
-        result.success(null)
-      }
-      is MicAudioRecorder.StartResult.DeviceNotFound ->
-        result.error("deviceNotFound", "No input device exists for id $requestedDeviceId.", null)
-      is MicAudioRecorder.StartResult.RoutingRejected ->
-        result.error(
-          "activationFailed",
-          "Android rejected microphone routing for device id $requestedDeviceId.",
-          null,
-        )
-      is MicAudioRecorder.StartResult.ActivationFailed ->
-        result.error("activationFailed", "Unable to start microphone session.", outcome.message)
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -231,11 +167,5 @@ class FlutterMicSelectorPlugin :
 
   private fun emitDevices() {
     mainHandler.post { devicesEventSink?.success(inputDevices()) }
-  }
-
-  private fun emitInputLevel(rms: Double, peak: Double) {
-    mainHandler.post {
-      levelEventSink?.success(mapOf("rms" to rms, "peak" to peak))
-    }
   }
 }

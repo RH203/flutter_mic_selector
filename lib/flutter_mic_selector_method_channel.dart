@@ -2,10 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'flutter_mic_selector_platform_interface.dart';
-import 'src/models/mic_error.dart';
-import 'src/models/mic_input_device.dart';
-import 'src/models/mic_input_level.dart';
-import 'src/models/mic_permission_status.dart';
+import 'src/models/microphone_device.dart';
+import 'src/models/microphone_exceptions.dart';
 
 /// Method-channel implementation backed by the native Android plugin.
 class MethodChannelFlutterMicSelector extends FlutterMicSelectorPlatform {
@@ -13,13 +11,11 @@ class MethodChannelFlutterMicSelector extends FlutterMicSelectorPlatform {
   MethodChannelFlutterMicSelector({
     MethodChannel? methodChannel,
     EventChannel? devicesEventChannel,
-    EventChannel? levelsEventChannel,
-  })  : methodChannel =
-            methodChannel ?? const MethodChannel('flutter_mic_selector'),
-        devicesEventChannel = devicesEventChannel ??
-            const EventChannel('flutter_mic_selector/devices'),
-        levelsEventChannel = levelsEventChannel ??
-            const EventChannel('flutter_mic_selector/levels');
+  }) : methodChannel =
+           methodChannel ?? const MethodChannel('flutter_mic_selector'),
+       devicesEventChannel =
+           devicesEventChannel ??
+           const EventChannel('flutter_mic_selector/devices');
 
   /// Method channel used for command and query calls.
   @visibleForTesting
@@ -29,116 +25,93 @@ class MethodChannelFlutterMicSelector extends FlutterMicSelectorPlatform {
   @visibleForTesting
   final EventChannel devicesEventChannel;
 
-  /// Event channel used for microphone input level events.
-  @visibleForTesting
-  final EventChannel levelsEventChannel;
-
   @override
-  Future<List<MicInputDevice>> getDevices() async {
+  Future<List<MicrophoneDevice>> getAvailableMicrophones() async {
     final result = await _invoke<Object?>('getDevices');
-    return _parseDevices(result);
+    return _parseMicrophones(result);
   }
 
   @override
-  Stream<List<MicInputDevice>> watchDevices() {
+  Stream<List<MicrophoneDevice>> microphoneDevicesChanged() {
     return devicesEventChannel.receiveBroadcastStream().map((event) {
-      return _parseDevices((event as List<Object?>?) ?? <Object?>[]);
+      return _parseMicrophones((event as List<Object?>?) ?? <Object?>[]);
     });
   }
 
   @override
-  Stream<MicInputLevel> watchInputLevel() {
-    return levelsEventChannel.receiveBroadcastStream().map((event) {
-      if (event is Map<Object?, Object?>) {
-        return MicInputLevel.fromMap(event);
-      }
-      return const MicInputLevel(rms: 0, peak: 0);
+  Future<MicrophoneDevice?> getSelectedMicrophone() async {
+    final deviceId = await _invoke<String>('getSelectedDeviceId');
+    if (deviceId == null || deviceId.isEmpty) return null;
+    final devices = await getAvailableMicrophones();
+    try {
+      return devices.firstWhere((d) => d.id == deviceId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> selectMicrophone(MicrophoneDevice device) {
+    return selectMicrophoneById(device.id);
+  }
+
+  @override
+  Future<void> selectMicrophoneById(String deviceId) {
+    return _invoke<void>('selectDevice', <String, Object?>{
+      'deviceId': deviceId,
     });
   }
 
   @override
-  Future<void> selectDevice(String deviceId) {
-    return _invoke<void>('selectDevice', <String, Object?>{'deviceId': deviceId});
-  }
-
-  @override
-  Future<String?> getSelectedDeviceId() {
-    return _invoke<String>('getSelectedDeviceId');
-  }
-
-  @override
-  Future<void> clearSelectedDevice() {
+  Future<void> clearSelectedMicrophone() {
     return _invoke<void>('clearSelectedDevice');
   }
 
   @override
-  Future<void> start({String? deviceId}) {
-    final arguments = deviceId == null
-        ? null
-        : <String, Object?>{'deviceId': deviceId};
-    return _invoke<void>('start', arguments);
-  }
-
-  @override
-  Future<void> stop() {
-    return _invoke<void>('stop');
-  }
-
-  @override
-  Future<MicPermissionStatus> hasPermission() async {
+  Future<bool> hasPermission() async {
     final status = await _invoke<String>('hasPermission');
-    return _parsePermissionStatus(status);
+    return status == 'granted';
   }
 
   @override
-  Future<MicPermissionStatus> requestPermission() async {
+  Future<bool> requestPermission() async {
     final status = await _invoke<String>('requestPermission');
-    return _parsePermissionStatus(status);
+    return status == 'granted';
   }
 
   Future<T?> _invoke<T>(String method, [Object? arguments]) async {
     try {
       return await methodChannel.invokeMethod<T>(method, arguments);
-    } on MissingPluginException catch (error) {
-      throw MicException(
-        MicError(
-          code: MicErrorCode.platformNotSupported,
-          message: 'flutter_mic_selector is currently supported on Android only.',
-          details: error.message,
-        ),
+    } on MissingPluginException catch (e) {
+      throw UnsupportedMicrophoneException(
+        'flutter_mic_selector is currently supported on Android only. '
+        '(${e.message})',
       );
-    } on PlatformException catch (error) {
-      throw MicException(
-        MicError(
-          code: _parseErrorCode(error.code),
-          message: error.message ?? 'Microphone selector platform call failed.',
-          details: error.details,
-        ),
-      );
+    } on PlatformException catch (e) {
+      throw _convertError(e);
     }
   }
 
-  static List<MicInputDevice> _parseDevices(Object? result) {
+  static Never _convertError(PlatformException e) {
+    final message = e.message ?? 'Microphone selector platform call failed.';
+    switch (e.code) {
+      case 'deviceNotFound':
+        throw MicrophoneNotFoundException(message);
+      case 'permissionDenied':
+        throw MicrophonePermissionException(message);
+      case 'activationFailed':
+        throw MicrophoneSelectionException(message);
+      default:
+        throw MicrophoneSelectionException(message);
+    }
+  }
+
+  static List<MicrophoneDevice> _parseMicrophones(Object? result) {
     final items = result is List<Object?> ? result : <Object?>[];
     return items
         .whereType<Map<Object?, Object?>>()
-        .map(MicInputDevice.fromMap)
+        .map(MicrophoneDevice.fromMap)
         .where((device) => device.id.isNotEmpty)
         .toList(growable: false);
-  }
-
-  static MicPermissionStatus _parsePermissionStatus(String? status) {
-    return switch (status) {
-      'granted' => MicPermissionStatus.granted,
-      'platformNotSupported' => MicPermissionStatus.platformNotSupported,
-      _ => MicPermissionStatus.denied,
-    };
-  }
-
-  static MicErrorCode _parseErrorCode(String code) {
-    return MicErrorCode.values.firstWhere(
-      (value) => value.name == code,
-      orElse: () => MicErrorCode.unknown,
-    );
   }
 }

@@ -1,4 +1,10 @@
+import 'microphone_device.dart';
+import 'microphone_type.dart';
+
 /// Describes an audio input device that Android can expose to the app.
+///
+/// Deprecated: Use [MicrophoneDevice] instead.
+@Deprecated('Use MicrophoneDevice instead.')
 class MicInputDevice {
   /// Creates an immutable microphone input device description.
   const MicInputDevice({
@@ -94,18 +100,21 @@ class MicInputDevice {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        name,
-        type,
-        typeId,
-        typeLabel,
-        rawName,
-        address,
-        isDefault,
-      );
+    id,
+    name,
+    type,
+    typeId,
+    typeLabel,
+    rawName,
+    address,
+    isDefault,
+  );
 }
 
 /// Stable microphone input type values returned by [MicInputDevice.type].
+///
+/// Deprecated: Use [MicrophoneType] enum instead.
+@Deprecated('Use MicrophoneType enum instead.')
 abstract final class MicInputDeviceTypes {
   /// Unknown or unsupported input type.
   static const String unknown = 'unknown';

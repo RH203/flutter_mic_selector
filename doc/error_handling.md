@@ -1,16 +1,15 @@
 # Error Handling
 
-All operation failures are thrown as `MicException` carrying a structured `MicError`.
+All failures throw typed exceptions.
 
-## Error Codes
+## Exception Types
 
-| Code | Description | When It Occurs |
-|---|---|---|
-| `platformNotSupported` | The API is not implemented on this platform | Calling any method on iOS, web, or desktop |
-| `permissionDenied` | `RECORD_AUDIO` permission has not been granted | `start()` called without permission |
-| `deviceNotFound` | The requested device could not be found | `selectDevice()` with an invalid or disconnected device ID |
-| `activationFailed` | Android rejected routing or session creation failed | `start()` when AudioRecord creation fails or preferred device routing is rejected |
-| `unknown` | An unexpected platform or plugin error occurred | Any unclassified native error |
+| Exception | When It Occurs |
+|-----------|---------------|
+| `MicrophoneNotFoundException` | `selectMicrophoneById()` with invalid or disconnected device ID |
+| `MicrophoneSelectionException` | Android rejected the device selection or routing |
+| `MicrophonePermissionException` | RECORD_AUDIO permission is missing |
+| `UnsupportedMicrophoneException` | Operation called on non-Android platform |
 
 ## Catching Errors
 
@@ -18,67 +17,49 @@ All operation failures are thrown as `MicException` carrying a structured `MicEr
 import 'package:flutter_mic_selector/flutter_mic_selector.dart';
 
 try {
-  await selector.start();
-} on MicException catch (e) {
-  switch (e.error.code) {
-    case MicErrorCode.permissionDenied:
-      // Show permission rationale
-      break;
-    case MicErrorCode.platformNotSupported:
-      // Show platform-not-supported message
-      break;
-    case MicErrorCode.activationFailed:
-      // Retry or fall back to default device
-      break;
-    case MicErrorCode.deviceNotFound:
-      // Refresh device list and try again
-      break;
-    case MicErrorCode.unknown:
-      // Log and show generic error
-      break;
-  }
+  await micSelector.selectMicrophoneById('99');
+} on MicrophoneNotFoundException catch (e) {
+  print('Device not found: ${e.deviceId}');
+} on MicrophonePermissionException catch (e) {
+  print('Permission required: ${e.message}');
+} on UnsupportedMicrophoneException catch (e) {
+  print('Platform not supported: ${e.message}');
+} on MicrophoneSelectionException catch (e) {
+  print('Selection failed: ${e.message}');
 }
 ```
 
 ## Platform Not Supported
 
-On iOS, web, and desktop, every method throws `MicException` with `MicErrorCode.platformNotSupported`. Check before calling:
+On iOS, web, and desktop, all methods throw `UnsupportedMicrophoneException`:
 
 ```dart
-bool _canUseMicSelector = true;
-
 try {
-  await selector.getDevices();
-} on MicException catch (e) {
-  if (e.error.code == MicErrorCode.platformNotSupported) {
-    _canUseMicSelector = false;
-    // Hide mic selector UI
-  }
+  await micSelector.getAvailableMicrophones();
+} on UnsupportedMicrophoneException catch (e) {
+  // Hide mic selector UI on unsupported platforms
 }
 ```
 
 ## Permission Denied
 
-When the user denies `RECORD_AUDIO`, the `start()` method throws `MicException(MicErrorCode.permissionDenied)`. The `MicSelectorView` widget handles this internally. For custom UI:
-
 ```dart
-final status = await selector.requestPermission();
-if (status != MicPermissionStatus.granted) {
-  // Show rationale dialog explaining why mic access is needed
-  // User may need to grant via Settings
+final granted = await micSelector.requestPermission();
+if (!granted) {
+  // Show rationale explaining why mic access is needed
 }
 ```
 
 ## Edge Cases
 
-### Device Disconnects During Session
+### Device Disconnects After Selection
 
-If the selected device disconnects while a session is active, the mic routing falls back to Android's default input. The state stream emits an updated device list without the disconnected device, and `selectedDevice` becomes `null`.
+If the selected device disconnects, `getSelectedMicrophone()` returns `null` and the device list is updated. The selection persists in storage — it is restored if the device reconnects.
 
 ### No Devices Available
 
-`getDevices()` returns an empty list. `watchState()` emits `devices: []`. Widgets handle this gracefully — dropdown shows no items, `MicSelectorView` shows an empty state.
+`getAvailableMicrophones()` returns an empty list on platforms without microphones or on Android API < 23.
 
 ### Selected Device Reconnects
 
-If a saved preferred device disconnects and reconnects later, the selector automatically picks it up. `watchState()` emits an updated state with `selectedDevice` populated again.
+If a saved device reconnects, the `microphoneDevicesChanged` stream emits the updated list. Call `getSelectedMicrophone()` to check if the restored device matches.

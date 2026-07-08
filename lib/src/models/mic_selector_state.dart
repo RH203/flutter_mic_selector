@@ -1,6 +1,10 @@
 import 'mic_input_device.dart';
 
 /// Immutable state snapshot emitted by [MicSelector].
+///
+/// Deprecated: MicSelectorState is no longer emitted by the plugin.
+/// Use [MicrophoneDevice] models directly.
+@Deprecated('Use MicrophoneDevice models directly.')
 class MicSelectorState {
   /// Creates a microphone selector state snapshot.
   const MicSelectorState({

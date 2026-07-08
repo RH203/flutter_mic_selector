@@ -1,10 +1,11 @@
 /// Current microphone input level emitted by the native recording session.
+///
+/// Deprecated: Recording functionality has been removed from the plugin.
+/// Use a dedicated recording package such as `record` instead.
+@Deprecated('Use a dedicated recording package (e.g. record).')
 class MicInputLevel {
   /// Creates an immutable microphone input level snapshot.
-  const MicInputLevel({
-    required this.rms,
-    required this.peak,
-  });
+  const MicInputLevel({required this.rms, required this.peak});
 
   /// Root-mean-square level normalized from 0.0 to 1.0.
   final double rms;
@@ -22,10 +23,7 @@ class MicInputLevel {
 
   /// Converts this level to a serializable map.
   Map<String, Object?> toMap() {
-    return <String, Object?>{
-      'rms': rms,
-      'peak': peak,
-    };
+    return <String, Object?>{'rms': rms, 'peak': peak};
   }
 
   static double _normalizedDouble(Object? value) {

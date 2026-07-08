@@ -22,16 +22,14 @@ internal class MicPermissionManager(
   private var pendingResult: MethodChannel.Result? = null
 
   /**
-   * Returns `"granted"` when `RECORD_AUDIO` is available, `"denied"` otherwise.
+   * Returns `true` when `RECORD_AUDIO` is granted, `false` otherwise.
    *
    * On API levels below M the permission is always implicitly granted.
    */
-  fun status(): String {
-    val granted =
-      Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-        context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-        PackageManager.PERMISSION_GRANTED
-    return if (granted) "granted" else "denied"
+  fun status(): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+      context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+      PackageManager.PERMISSION_GRANTED
   }
 
   /**
@@ -44,8 +42,8 @@ internal class MicPermissionManager(
    * @param result   The Flutter method-channel result to resolve asynchronously.
    */
   fun request(activity: Activity?, result: MethodChannel.Result) {
-    if (status() == "granted") {
-      result.success("granted")
+    if (status()) {
+      result.success(true)
       return
     }
     if (activity == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
@@ -75,7 +73,7 @@ internal class MicPermissionManager(
   ): Boolean {
     if (requestCode != REQUEST_RECORD_AUDIO) return false
     val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-    pendingResult?.success(if (granted) "granted" else "denied")
+    pendingResult?.success(granted)
     pendingResult = null
     return true
   }
