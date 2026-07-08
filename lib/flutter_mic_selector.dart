@@ -4,202 +4,233 @@ import 'package:flutter/foundation.dart';
 
 import 'flutter_mic_selector_platform_interface.dart';
 import 'src/models/mic_input_device.dart';
-import 'src/models/mic_input_level.dart';
-import 'src/models/mic_permission_status.dart';
-import 'src/models/mic_selector_state.dart';
+import 'src/models/microphone_device.dart';
+import 'src/models/microphone_exceptions.dart';
+import 'src/models/microphone_type.dart';
 
+// Deprecated exports kept for backward compatibility.
 export 'src/models/mic_error.dart';
 export 'src/models/mic_input_device.dart';
 export 'src/models/mic_input_level.dart';
 export 'src/models/mic_permission_status.dart';
 export 'src/models/mic_selector_state.dart';
-export 'src/widgets/mic_selector_builder.dart';
-export 'src/widgets/mic_selector_dropdown.dart';
-export 'src/widgets/mic_selector_view.dart';
 
-/// Public entry point for microphone input device selection.
+// New public API exports.
+export 'src/models/microphone_device.dart';
+export 'src/models/microphone_exceptions.dart';
+export 'src/models/microphone_type.dart';
+
+/// Public entry point for microphone input device discovery and selection.
 ///
-/// The selected device is restored from native storage during initialization,
-/// but the microphone remains inactive until [start] is called.
-class MicSelector {
-  MicSelector._({
-    required FlutterMicSelectorPlatform platform,
-  }) : _platform = platform {
-    _initialization = _initialize();
+/// Use [FlutterMicSelector.instance] for the singleton, or create an isolated
+/// instance with [FlutterMicSelector.test] for tests.
+///
+/// This plugin focuses solely on microphone device management — it does not
+/// perform audio recording. Use external packages such as `record` for that.
+class FlutterMicSelector {
+  FlutterMicSelector._({required FlutterMicSelectorPlatform platform})
+    : _platform = platform {
+    _deviceSubscription = _platform.microphoneDevicesChanged().listen(
+      _updateDeviceList,
+      onError: _deviceController.addError,
+    );
   }
 
-  static MicSelector? _instance;
+  static FlutterMicSelector? _instance;
 
   /// Singleton instance using the default platform implementation.
-  static MicSelector get instance {
-    return _instance ??= MicSelector._(
+  static FlutterMicSelector get instance {
+    return _instance ??= FlutterMicSelector._(
       platform: FlutterMicSelectorPlatform.instance,
     );
   }
 
   /// Creates an isolated selector for tests or advanced dependency injection.
   @visibleForTesting
-  factory MicSelector.test({
+  factory FlutterMicSelector.test({
     required FlutterMicSelectorPlatform platform,
   }) {
-    return MicSelector._(platform: platform);
+    return FlutterMicSelector._(platform: platform);
   }
 
   final FlutterMicSelectorPlatform _platform;
-  final StreamController<MicSelectorState> _stateController =
-      StreamController<MicSelectorState>.broadcast();
-
-  late final Future<void> _initialization;
-  StreamSubscription<List<MicInputDevice>>? _deviceSubscription;
-  MicSelectorState _state = const MicSelectorState(devices: <MicInputDevice>[]);
+  final StreamController<List<MicrophoneDevice>> _deviceController =
+      StreamController<List<MicrophoneDevice>>.broadcast();
+  StreamSubscription<List<MicrophoneDevice>>? _deviceSubscription;
+  List<MicrophoneDevice> _devices = const <MicrophoneDevice>[];
   String? _selectedDeviceId;
 
-  /// Whether the plugin currently owns an active microphone session.
-  bool get isActive => _state.isActive;
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
 
-  /// Returns available audio input devices.
-  Future<List<MicInputDevice>> getDevices() async {
-    await _initialization;
-    final devices = await _platform.getDevices();
-    _replaceDevices(devices);
+  /// Returns available microphone input devices.
+  ///
+  /// Only input-capable devices are included.
+  Future<List<MicrophoneDevice>> getAvailableMicrophones() async {
+    final devices = await _platform.getAvailableMicrophones();
+    _updateDeviceList(devices);
     return devices;
   }
 
-  /// Watches audio input device changes.
-  Stream<List<MicInputDevice>> watchDevices() {
-    return _platform.watchDevices();
+  /// Stream that emits the latest device list when a microphone is connected
+  /// or disconnected.
+  Stream<List<MicrophoneDevice>> get microphoneDevicesChanged =>
+      _deviceController.stream;
+
+  /// Returns the currently selected microphone, or `null` if none is selected.
+  Future<MicrophoneDevice?> getSelectedMicrophone() async {
+    try {
+      return await _platform.getSelectedMicrophone();
+    } on UnsupportedMicrophoneException {
+      return null;
+    }
   }
 
-  /// Watches normalized microphone input levels while the session is active.
+  /// Selects [microphone] as the preferred input device.
   ///
-  /// Values are emitted by the native `AudioRecord` session used by [start].
-  Stream<MicInputLevel> watchInputLevel() {
-    return _platform.watchInputLevel();
+  /// Throws [MicrophoneNotFoundException] if the device no longer exists.
+  /// Throws [MicrophoneSelectionException] if Android rejects the routing.
+  Future<void> selectMicrophone(MicrophoneDevice microphone) async {
+    await selectMicrophoneById(microphone.id);
   }
 
-  /// Returns the restored or currently selected microphone input device.
-  Future<MicInputDevice?> getSelectedDevice() async {
-    await _initialization;
-    return _state.selectedDevice;
+  /// Selects a microphone by its native device [deviceId].
+  ///
+  /// Throws [MicrophoneNotFoundException] if the device no longer exists.
+  /// Throws [MicrophoneSelectionException] if Android rejects the routing.
+  Future<void> selectMicrophoneById(String deviceId) async {
+    try {
+      await _platform.selectMicrophoneById(deviceId);
+      _selectedDeviceId = deviceId;
+      _updateDeviceList(_devices);
+    } on MicrophoneNotFoundException {
+      rethrow;
+    } on UnsupportedMicrophoneException {
+      rethrow;
+    } on MicrophoneSelectionException {
+      rethrow;
+    } catch (e) {
+      throw MicrophoneSelectionException(
+        'Failed to select microphone $deviceId: $e',
+        deviceId,
+      );
+    }
   }
 
-  /// Selects and persists the preferred microphone input device.
-  Future<void> selectDevice(String deviceId) async {
-    await _initialization;
-    await _platform.selectDevice(deviceId);
-    _selectedDeviceId = deviceId;
-    _emit(_state.copyWith(selectedDevice: _deviceForId(deviceId)));
-  }
-
-  /// Clears the preferred microphone input device from native state.
-  Future<void> clearSelectedDevice() async {
-    await _initialization;
-    await _platform.clearSelectedDevice();
+  /// Clears the preferred microphone selection, restoring system default routing.
+  Future<void> clearSelectedMicrophone() async {
+    try {
+      await _platform.clearSelectedMicrophone();
+    } on UnsupportedMicrophoneException {
+      // Not supported on non-Android platforms; ignore.
+    }
     _selectedDeviceId = null;
-    _emit(_state.copyWith(selectedDevice: null));
+    _updateDeviceList(_devices);
   }
 
-  /// Starts an app-owned microphone activation session.
+  /// Checks whether the RECORD_AUDIO permission is granted.
   ///
-  /// This is the only API that activates the microphone. Restoring a saved
-  /// device id never starts recording automatically.
-  Future<void> start() async {
-    await _initialization;
-    await _platform.start(deviceId: _state.selectedDevice?.id);
-    _emit(_state.copyWith(isActive: true));
-  }
-
-  /// Stops the app-owned microphone activation session.
-  Future<void> stop() async {
-    await _initialization;
-    await _platform.stop();
-    _emit(_state.copyWith(isActive: false));
-  }
-
-  /// Emits selector state changes for devices, selected device, and active flag.
-  Stream<MicSelectorState> watchState() {
-    late StreamController<MicSelectorState> controller;
-    StreamSubscription<MicSelectorState>? subscription;
-
-    controller = StreamController<MicSelectorState>(
-      onListen: () {
-        _initialization.then((_) {
-          if (controller.isClosed) {
-            return;
-          }
-          controller.add(_state);
-          subscription = _stateController.stream.listen(
-            controller.add,
-            onError: controller.addError,
-            onDone: controller.close,
-          );
-        }).catchError((Object error, StackTrace stackTrace) {
-          if (!controller.isClosed) {
-            controller.addError(error, stackTrace);
-          }
-          return null;
-        });
-      },
-      onCancel: () => subscription?.cancel(),
-    );
-    return controller.stream;
-  }
-
-  /// Returns the current Android RECORD_AUDIO permission state.
-  Future<MicPermissionStatus> hasPermission() {
+  /// The plugin needs this permission to query and select audio devices.
+  /// Permission UI must be handled by the consuming application.
+  Future<bool> hasPermission() {
     return _platform.hasPermission();
   }
 
-  /// Requests Android RECORD_AUDIO permission.
-  Future<MicPermissionStatus> requestPermission() {
+  /// Requests the RECORD_AUDIO permission.
+  ///
+  /// Returns `true` if the permission was granted.
+  /// The consuming application should handle permission-denied flows.
+  Future<bool> requestPermission() {
     return _platform.requestPermission();
-  }
-
-  Future<void> _initialize() async {
-    _selectedDeviceId = await _platform.getSelectedDeviceId();
-    final devices = await _platform.getDevices();
-    _replaceDevices(devices);
-    if (_selectedDeviceId != null && _deviceForId(_selectedDeviceId!) != null) {
-      await _platform.selectDevice(_selectedDeviceId!);
-    }
-    _deviceSubscription = _platform.watchDevices().listen(_replaceDevices);
-  }
-
-  void _replaceDevices(List<MicInputDevice> devices) {
-    final nextDevices = List<MicInputDevice>.unmodifiable(devices);
-    _emit(
-      _state.copyWith(
-        devices: nextDevices,
-        selectedDevice: _selectedDeviceId == null
-            ? null
-            : _deviceForId(_selectedDeviceId!, nextDevices),
-      ),
-    );
-  }
-
-  MicInputDevice? _deviceForId(String id, [List<MicInputDevice>? devices]) {
-    for (final device in devices ?? _state.devices) {
-      if (device.id == id) {
-        return device;
-      }
-    }
-    return null;
-  }
-
-  void _emit(MicSelectorState state) {
-    _state = state;
-    if (!_stateController.isClosed) {
-      _stateController.add(state);
-    }
   }
 
   /// Releases stream subscriptions held by this selector.
   @visibleForTesting
   Future<void> dispose() async {
     await _deviceSubscription?.cancel();
-    await _stateController.close();
+    await _deviceController.close();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Deprecated API wrappers
+  // ---------------------------------------------------------------------------
+
+  @Deprecated('Use getAvailableMicrophones instead.')
+  Future<List<MicInputDevice>> getDevices() async {
+    final devices = await getAvailableMicrophones();
+    return devices.map(_toLegacy).toList(growable: false);
+  }
+
+  @Deprecated('Use microphoneDevicesChanged stream instead.')
+  Stream<List<MicInputDevice>> watchDevices() {
+    return _deviceController.stream.map(
+      (devices) => devices.map(_toLegacy).toList(growable: false),
+    );
+  }
+
+  @Deprecated('Use getSelectedMicrophone instead.')
+  Future<MicInputDevice?> getSelectedDevice() async {
+    final device = await getSelectedMicrophone();
+    if (device == null) return null;
+    return _toLegacy(device);
+  }
+
+  @Deprecated('Use selectMicrophone or selectMicrophoneById instead.')
+  Future<void> selectDevice(String deviceId) {
+    return selectMicrophoneById(deviceId);
+  }
+
+  @Deprecated('Use clearSelectedMicrophone instead.')
+  Future<void> clearSelectedDevice() {
+    return clearSelectedMicrophone();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal helpers
+  // ---------------------------------------------------------------------------
+
+  void _updateDeviceList(List<MicrophoneDevice> devices) {
+    _devices = List<MicrophoneDevice>.unmodifiable(
+      devices.map(
+        (d) =>
+            d.isSelected ==
+                (_selectedDeviceId != null && d.id == _selectedDeviceId)
+            ? d.copyWith(
+                isSelected:
+                    _selectedDeviceId != null && d.id == _selectedDeviceId,
+              )
+            : d,
+      ),
+    );
+    if (!_deviceController.isClosed) {
+      _deviceController.add(_devices);
+    }
+  }
+
+  static MicInputDevice _toLegacy(MicrophoneDevice device) {
+    return MicInputDevice(
+      id: device.id,
+      name: device.name,
+      type: _typeToString(device.type),
+      isDefault: device.isSelected,
+    );
+  }
+
+  static String _typeToString(MicrophoneType type) {
+    return switch (type) {
+      MicrophoneType.builtIn => 'builtInMic',
+      MicrophoneType.wiredHeadset => 'wiredHeadset',
+      MicrophoneType.bluetooth => 'bluetoothSco',
+      MicrophoneType.usb => 'usbDevice',
+      MicrophoneType.telephony => 'telephony',
+      MicrophoneType.unknown => 'unknown',
+    };
   }
 }
 
 /// Backward-compatible alias for the main plugin entry point.
-typedef FlutterMicSelector = MicSelector;
+///
+/// Deprecated: Use [FlutterMicSelector] instead.
+@Deprecated('Use FlutterMicSelector instead.')
+typedef MicSelector = FlutterMicSelector;

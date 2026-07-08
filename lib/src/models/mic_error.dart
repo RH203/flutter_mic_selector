@@ -1,4 +1,7 @@
 /// Machine-readable error codes returned by the microphone selector.
+///
+/// Deprecated: Use typed exception classes instead.
+@Deprecated('Use typed exception classes instead.')
 enum MicErrorCode {
   /// The requested API is not implemented on the current platform.
   platformNotSupported,
@@ -17,13 +20,12 @@ enum MicErrorCode {
 }
 
 /// Structured microphone selector error information.
+///
+/// Deprecated: Use typed exception classes instead.
+@Deprecated('Use typed exception classes instead.')
 class MicError {
   /// Creates an immutable microphone selector error.
-  const MicError({
-    required this.code,
-    required this.message,
-    this.details,
-  });
+  const MicError({required this.code, required this.message, this.details});
 
   /// Machine-readable code for the error.
   final MicErrorCode code;
@@ -39,6 +41,9 @@ class MicError {
 }
 
 /// Exception thrown by the public Dart API when a platform operation fails.
+///
+/// Deprecated: Use typed exception classes instead.
+@Deprecated('Use typed exception classes instead.')
 class MicException implements Exception {
   /// Creates an exception from a structured [MicError].
   const MicException(this.error);

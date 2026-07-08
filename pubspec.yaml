@@ -1,6 +1,6 @@
 name: flutter_mic_selector
-description: "Android microphone input device selection, persistence, permission helpers, and opt-in activation for Flutter apps."
-version: 0.0.2
+description: "Android microphone device discovery, selection, and persistence for Flutter."
+version: 0.3.0
 homepage: https://github.com/RH203/flutter_mic_selector
 
 environment:
@@ -36,8 +36,6 @@ flutter:
     platforms:
       android:
         package: com.example.flutter_mic_selector
-        pluginClass: FlutterMicSelectorPlugin
-      ios:
         pluginClass: FlutterMicSelectorPlugin
 
   # To add assets to your plugin package, add an assets section, like this:

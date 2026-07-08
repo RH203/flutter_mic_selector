@@ -20,15 +20,18 @@ internal object MicDeviceMapper {
    */
   fun toMap(device: AudioDeviceInfo, selectedDeviceId: String?): Map<String, Any?> {
     val rawName = productName(device)
+    val deviceId = device.id.toString()
     return mapOf(
-      "id"        to device.id.toString(),
+      "id"        to deviceId,
       "name"      to inputDisplayName(device, rawName),
       "type"      to deviceTypeValue(device.type),
       "typeId"    to device.type,
       "typeLabel" to inputTypeLabel(device.type),
       "rawName"   to rawName,
       "address"   to device.address,
-      "isDefault" to (selectedDeviceId == device.id.toString()),
+      "isDefault" to (selectedDeviceId == deviceId),
+      "isInput"   to true,
+      "isSelected" to (selectedDeviceId == deviceId),
     )
   }
 

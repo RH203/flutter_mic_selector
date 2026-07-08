@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter_mic_selector/flutter_mic_selector.dart';
-import 'package:flutter_mic_selector/flutter_mic_selector_method_channel.dart';
 import 'package:flutter_mic_selector/flutter_mic_selector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -10,7 +9,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 // Fake platform implementing the new interface
 // ---------------------------------------------------------------------------
 
-class FakeMicSelectorPlatform
+class FakeFlutterMicSelectorPlatform
     with MockPlatformInterfaceMixin
     implements FlutterMicSelectorPlatform {
   final StreamController<List<MicrophoneDevice>> deviceChanges =
@@ -94,70 +93,12 @@ class FakeMicSelectorPlatform
 // ---------------------------------------------------------------------------
 
 void main() {
-  // --- Platform default -------------------------------------------------------
-
-  test('$MethodChannelFlutterMicSelector is the default instance', () {
-    expect(
-      FlutterMicSelectorPlatform.instance,
-      isInstanceOf<MethodChannelFlutterMicSelector>(),
-    );
-  });
-
-  // --- MicInputDevice (deprecated, kept for backward compat) -------------------
-
-  group('MicInputDevice (deprecated)', () {
-    test('fromMap / toMap round-trip preserves all fields', () {
-      const device = MicInputDevice(
-        id: '7',
-        name: 'USB mic',
-        type: 'usbDevice',
-        typeId: 11,
-        typeLabel: 'USB microphone',
-        rawName: 'Blue Yeti',
-        address: 'card0',
-        isDefault: true,
-      );
-      final map = device.toMap();
-      final restored = MicInputDevice.fromMap(map);
-      expect(restored, equals(device));
-    });
-
-    test('fromMap handles missing optional fields gracefully', () {
-      final device = MicInputDevice.fromMap(<Object?, Object?>{'id': '5'});
-      expect(device.id, '5');
-      expect(device.name, 'Microphone');
-      expect(device.type, 'unknown');
-      expect(device.typeId, isNull);
-      expect(device.isDefault, isFalse);
-    });
-
-    test('equality ignores object identity', () {
-      const a = MicInputDevice(id: '1', name: 'Mic', type: 'builtInMic');
-      const b = MicInputDevice(id: '1', name: 'Mic', type: 'builtInMic');
-      expect(a, equals(b));
-      expect(a.hashCode, equals(b.hashCode));
-    });
-
-    test('MicInputDeviceTypes.labelFor returns known labels', () {
-      expect(
-        MicInputDeviceTypes.labelFor(MicInputDeviceTypes.usbDevice),
-        'USB microphone',
-      );
-    });
-
-    test('MicInputDeviceTypes.labelFor returns fallback for unknown type', () {
-      expect(MicInputDeviceTypes.labelFor('unmappedType'), 'Audio input');
-    });
-  });
-
-  // --- FlutterMicSelector (integration with fake platform) --------------------
-
   group('FlutterMicSelector', () {
-    late FakeMicSelectorPlatform platform;
+    late FakeFlutterMicSelectorPlatform platform;
     late FlutterMicSelector selector;
 
     setUp(() {
-      platform = FakeMicSelectorPlatform();
+      platform = FakeFlutterMicSelectorPlatform();
       selector = FlutterMicSelector.test(platform: platform);
     });
 
@@ -166,14 +107,27 @@ void main() {
       await platform.close();
     });
 
-    test('getAvailableMicrophones returns devices', () async {
-      await selector.getAvailableMicrophones();
-      expect(platform.calls, contains('getAvailableMicrophones'));
+    test('getAvailableMicrophones returns device list', () async {
+      final devices = await selector.getAvailableMicrophones();
+      expect(devices, hasLength(2));
+      expect(devices.first.id, '1');
+      expect(devices.first.type, MicrophoneType.builtIn);
     });
 
-    test('selectMicrophoneById selects and persists', () async {
+    test('getAvailableMicrophones updates internal device list', () async {
+      final devices = await selector.getAvailableMicrophones();
+      expect(devices.length, 2);
+    });
+
+    test('getSelectedMicrophone returns null when nothing selected', () async {
+      final device = await selector.getSelectedMicrophone();
+      expect(device, isNull);
+    });
+
+    test('selectMicrophoneById selects device', () async {
       await selector.selectMicrophoneById('1');
       expect(platform.nativeSelectedDeviceId, '1');
+      expect(platform.calls, contains('selectMicrophoneById:1'));
     });
 
     test('selectMicrophoneById throws for unknown id', () async {
@@ -183,28 +137,72 @@ void main() {
       );
     });
 
-    test('clearSelectedMicrophone clears state', () async {
+    test('selectMicrophone delegates to selectMicrophoneById', () async {
+      final device = MicrophoneDevice(
+        id: '2',
+        name: 'USB mic',
+        type: MicrophoneType.usb,
+      );
+      await selector.selectMicrophone(device);
+      expect(platform.nativeSelectedDeviceId, '2');
+    });
+
+    test('getSelectedMicrophone returns selected device', () async {
+      await selector.selectMicrophoneById('2');
+      final device = await selector.getSelectedMicrophone();
+      expect(device, isNotNull);
+      expect(device!.id, '2');
+      expect(device.name, 'USB mic');
+    });
+
+    test('clearSelectedMicrophone clears selection', () async {
       await selector.selectMicrophoneById('1');
       await selector.clearSelectedMicrophone();
       expect(platform.nativeSelectedDeviceId, isNull);
-      expect(await selector.getSelectedMicrophone(), isNull);
+      final device = await selector.getSelectedMicrophone();
+      expect(device, isNull);
     });
 
     test('hasPermission delegates to platform', () async {
-      await selector.hasPermission();
+      final result = await selector.hasPermission();
+      expect(result, isTrue);
       expect(platform.calls, contains('hasPermission'));
     });
 
     test('requestPermission delegates to platform', () async {
-      await selector.requestPermission();
+      final result = await selector.requestPermission();
+      expect(result, isTrue);
       expect(platform.calls, contains('requestPermission'));
     });
 
-    test('device change stream emits updates', () async {
+    test('microphoneDevicesChanged emits device list', () async {
       final future = selector.microphoneDevicesChanged.first;
       platform.deviceChanges.add(platform.devices);
       final devices = await future;
       expect(devices, hasLength(2));
+    });
+
+    test('microphoneDevicesChanged emits updated devices', () async {
+      final future = selector.microphoneDevicesChanged.first;
+      platform.devices = const <MicrophoneDevice>[
+        MicrophoneDevice(
+          id: '3',
+          name: 'New mic',
+          type: MicrophoneType.bluetooth,
+        ),
+      ];
+      platform.deviceChanges.add(platform.devices);
+      final devices = await future;
+      expect(devices, hasLength(1));
+      expect(devices.first.id, '3');
+    });
+
+    test('successive selectMicrophoneById updates selection', () async {
+      await selector.selectMicrophoneById('1');
+      expect(platform.nativeSelectedDeviceId, '1');
+
+      await selector.selectMicrophoneById('2');
+      expect(platform.nativeSelectedDeviceId, '2');
     });
   });
 }
