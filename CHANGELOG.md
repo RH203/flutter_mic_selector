@@ -1,4 +1,4 @@
-## 0.3.0
+## 1.0.0
 
 * **Breaking**: Renamed `MicSelector` → `FlutterMicSelector` (kept as deprecated typedef).
 * **Breaking**: New `MicrophoneDevice` model replaces `MicInputDevice` (removed).
