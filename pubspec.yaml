@@ -3,6 +3,16 @@ description: "Android microphone device discovery, selection, and persistence fo
 version: 1.0.0
 homepage: https://github.com/RH203/flutter_mic_selector
 
+repository: https://github.com/username/flutter_mic_selector
+issue_tracker: https://github.com/username/flutter_mic_selector/issues
+
+topics:
+  - microphone
+  - audio
+  - input-device
+  - android
+  - flutter-plugin
+
 environment:
   sdk: ^3.8.1
   flutter: '>=3.3.0'
