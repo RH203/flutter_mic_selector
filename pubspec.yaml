@@ -1,10 +1,10 @@
 name: flutter_mic_selector
 description: "Android microphone device discovery, selection, and persistence for Flutter."
-version: 1.0.2
+version: 1.0.3
 homepage: https://github.com/RH203/flutter_mic_selector
 
-repository: https://github.com/username/flutter_mic_selector
-issue_tracker: https://github.com/username/flutter_mic_selector/issues
+repository: https://github.com/RH203/flutter_mic_selector
+issue_tracker: https://github.com/RH203/flutter_mic_selector/issues
 
 topics:
   - microphone

@@ -1,3 +1,7 @@
+## 1.0.3
+
+* Added package topics and an issue tracker URL to pubspec.yaml.
+
 ## 1.0.2
 
 * Added package topics and an issue tracker URL to pubspec.yaml.
