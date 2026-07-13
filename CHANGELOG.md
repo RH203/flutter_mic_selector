@@ -1,4 +1,16 @@
-## 0.3.0
+## 1.0.3
+
+* Added package topics and an issue tracker URL to pubspec.yaml.
+
+## 1.0.2
+
+* Added package topics and an issue tracker URL to pubspec.yaml.
+
+## 1.0.1
+
+* Added package topics and an issue tracker URL to pubspec.yaml.
+
+## 1.0.0
 
 * **Breaking**: Renamed `MicSelector` → `FlutterMicSelector` (kept as deprecated typedef).
 * **Breaking**: New `MicrophoneDevice` model replaces `MicInputDevice` (removed).
